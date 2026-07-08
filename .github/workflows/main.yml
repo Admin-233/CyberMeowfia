@@ -78,7 +78,7 @@ jobs:
 
 
       - name: Build
-        working-directory: exploit
+        working-directory: IonStack/CVE-2026-43499/exploit
         run: |
           make clean
           make \
@@ -87,7 +87,7 @@ jobs:
 
 
       - name: Verify output
-        working-directory: exploit
+        working-directory: IonStack/CVE-2026-43499/exploit
         run: |
           file build/${PROJECT}/bin/preload.so
           sha256sum build/${PROJECT}/bin/preload.so
