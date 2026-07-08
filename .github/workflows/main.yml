@@ -17,6 +17,7 @@ jobs:
     env:
       API: 35
       EXPLOIT_DIR: IonStack/CVE-2026-43499/exploit
+      POC_DIR: IonStack/CVE-2026-43499/poc
       NDK_VERSION: 29.0.13113456
 
 
@@ -74,7 +75,8 @@ jobs:
           cat targets.txt
 
 
-      - name: Build all targets
+
+      - name: Build all exploit targets
         working-directory: ${{ env.EXPLOIT_DIR }}
         run: |
 
@@ -89,6 +91,7 @@ jobs:
             echo " Building: ${PROJECT}"
             echo "======================================"
 
+
             make \
               API=${API} \
               PROJECT=${PROJECT}
@@ -98,23 +101,48 @@ jobs:
 
 
 
-      - name: Verify all outputs
-        working-directory: ${{ env.EXPLOIT_DIR }}
+      - name: Build poc
+        working-directory: ${{ env.POC_DIR }}
         run: |
 
-          echo "Generated files:"
+          echo "Building poc.c"
 
-          find build \
+
+          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API}-clang \
+            poc.c \
+            -O2 \
+            -fPIE \
+            -pie \
+            -pthread \
+            -o poc
+
+
+
+      - name: Verify outputs
+        run: |
+
+          echo "=== preload.so files ==="
+
+          find ${{ env.EXPLOIT_DIR }}/build \
             -name preload.so \
             -exec file {} \;
 
 
           echo
-          echo "SHA256:"
+          echo "=== poc ==="
 
-          find build \
+          file ${{ env.POC_DIR }}/poc
+
+
+          echo
+          echo "=== SHA256 ==="
+
+          find ${{ env.EXPLOIT_DIR }}/build \
             -name preload.so \
             -exec sha256sum {} \;
+
+
+          sha256sum ${{ env.POC_DIR }}/poc
 
 
 
@@ -126,3 +154,4 @@ jobs:
 
           path: |
             IonStack/CVE-2026-43499/exploit/build/
+            IonStack/CVE-2026-43499/poc/poc
