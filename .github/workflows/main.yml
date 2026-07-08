@@ -21,7 +21,7 @@ jobs:
 
       - name: Find targets
         id: targets
-        working-directory: exploit
+        working-directory: IonStack/CVE-2026-43499/exploit
         run: |
           PROJECTS=$(find src/targets -mindepth 2 -maxdepth 2 -name target.h \
             -printf '%h\n' \
