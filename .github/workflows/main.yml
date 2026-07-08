@@ -1,0 +1,101 @@
+name: Android NDK Build All Targets
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  prepare:
+    name: Generate target matrix
+    runs-on: ubuntu-latest
+
+    outputs:
+      projects: ${{ steps.targets.outputs.projects }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Find targets
+        id: targets
+        working-directory: exploit
+        run: |
+          PROJECTS=$(find src/targets -mindepth 2 -maxdepth 2 -name target.h \
+            -printf '%h\n' \
+            | sed 's#src/targets/##' \
+            | sort \
+            | jq -R -s -c 'split("\n")[:-1]')
+
+          echo "Targets:"
+          echo "$PROJECTS"
+
+          echo "projects=$PROJECTS" >> "$GITHUB_OUTPUT"
+
+
+  build:
+    name: Build ${{ matrix.project }}
+    needs: prepare
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.prepare.outputs.projects) }}
+
+    env:
+      API: 35
+      PROJECT: ${{ matrix.project }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+
+      - name: Install Android NDK r29
+        run: |
+          sdkmanager --install "ndk;29.0.13113456"
+
+
+      - name: Configure NDK
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.13113456" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/29.0.13113456" >> $GITHUB_ENV
+
+
+      - name: Build
+        working-directory: exploit
+        run: |
+          make clean
+          make \
+            API=${API} \
+            PROJECT=${PROJECT}
+
+
+      - name: Verify output
+        working-directory: exploit
+        run: |
+          file build/${PROJECT}/bin/preload.so
+          sha256sum build/${PROJECT}/bin/preload.so
+
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.project }}
+          path: |
+            exploit/build/${{ matrix.project }}/
