@@ -7,50 +7,21 @@ on:
   pull_request:
   workflow_dispatch:
 
+
 jobs:
-  prepare:
-    name: Generate target matrix
-    runs-on: ubuntu-latest
-
-    outputs:
-      projects: ${{ steps.targets.outputs.projects }}
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Find targets
-        id: targets
-        working-directory: IonStack/CVE-2026-43499/exploit
-        run: |
-          PROJECTS=$(find src/targets -mindepth 2 -maxdepth 2 -name target.h \
-            -printf '%h\n' \
-            | sed 's#src/targets/##' \
-            | sort \
-            | jq -R -s -c 'split("\n")[:-1]')
-
-          echo "Targets:"
-          echo "$PROJECTS"
-
-          echo "projects=$PROJECTS" >> "$GITHUB_OUTPUT"
-
-
   build:
-    name: Build ${{ matrix.project }}
-    needs: prepare
 
+    name: Build all Android targets
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        project: ${{ fromJSON(needs.prepare.outputs.projects) }}
 
     env:
       API: 35
-      PROJECT: ${{ matrix.project }}
+      EXPLOIT_DIR: IonStack/CVE-2026-43499/exploit
+      NDK_VERSION: 29.0.13113456
+
 
     steps:
+
       - name: Checkout source
         uses: actions/checkout@v4
 
@@ -66,36 +37,92 @@ jobs:
         uses: android-actions/setup-android@v3
 
 
-      - name: Install Android NDK r29
+      - name: Cache Android NDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_SDK_ROOT }}/ndk
+          key: android-ndk-${{ env.NDK_VERSION }}
+
+
+      - name: Install Android NDK
         run: |
-          sdkmanager --install "ndk;29.0.13113456"
+          sdkmanager --install "ndk;${NDK_VERSION}"
 
 
-      - name: Configure NDK
+      - name: Configure Android NDK
         run: |
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.13113456" >> $GITHUB_ENV
-          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/29.0.13113456" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> $GITHUB_ENV
 
 
-      - name: Build
-        working-directory: IonStack/CVE-2026-43499/exploit
+      - name: List targets
+        working-directory: ${{ env.EXPLOIT_DIR }}
         run: |
-          make clean
-          make \
-            API=${API} \
-            PROJECT=${PROJECT}
+
+          find src/targets \
+            -mindepth 2 \
+            -maxdepth 2 \
+            -name target.h \
+            -printf '%h\n' \
+            | sed 's#src/targets/##' \
+            | sort \
+            > targets.txt
 
 
-      - name: Verify output
-        working-directory: IonStack/CVE-2026-43499/exploit
+          echo "Detected targets:"
+          cat targets.txt
+
+
+      - name: Build all targets
+        working-directory: ${{ env.EXPLOIT_DIR }}
         run: |
-          file build/${PROJECT}/bin/preload.so
-          sha256sum build/${PROJECT}/bin/preload.so
+
+          rm -rf build
 
 
-      - name: Upload artifact
+          while read PROJECT
+          do
+
+            echo
+            echo "======================================"
+            echo " Building: ${PROJECT}"
+            echo "======================================"
+
+            make \
+              API=${API} \
+              PROJECT=${PROJECT}
+
+
+          done < targets.txt
+
+
+
+      - name: Verify all outputs
+        working-directory: ${{ env.EXPLOIT_DIR }}
+        run: |
+
+          echo "Generated files:"
+
+          find build \
+            -name preload.so \
+            -exec file {} \;
+
+
+          echo
+          echo "SHA256:"
+
+          find build \
+            -name preload.so \
+            -exec sha256sum {} \;
+
+
+
+      - name: Upload all builds
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.project }}
+
+          name: android-all-targets
+
           path: |
-            IonStack/CVE-2026-43499/exploit/build/${{ matrix.project }}/
+            IonStack/CVE-2026-43499/exploit/build/
